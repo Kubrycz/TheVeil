@@ -1,0 +1,61 @@
+:root {
+  --sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --serif: 'Iowan Old Style', 'Baskerville', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  color: #e8e7dc;
+  background: #070a0b;
+  font-family: var(--sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  font-optical-sizing: auto;
+  font-weight: 400;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #070a0b;
+  scroll-behavior: smooth;
+  scrollbar-color: rgba(159, 174, 157, 0.42) #070a0b;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background: #070a0b;
+}
+
+body,
+button,
+a {
+  font-family: var(--sans);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a:focus-visible {
+  outline: 1px solid #c4b18d;
+  outline-offset: 5px;
+}
+
+::selection {
+  color: #071012;
+  background: #b4c3ad;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
