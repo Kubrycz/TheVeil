@@ -1,457 +1,143 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import {
-  BufferGeometry,
-  CatmullRomCurve3,
-  DoubleSide,
-  Float32BufferAttribute,
-  Mesh,
-  Path,
-  Shape,
-  ShapeGeometry,
-  ShaderMaterial,
-  TubeGeometry,
-  Vector3,
-} from 'three'
-import { useEffect, useMemo, useRef } from 'react'
-import type { MutableRefObject } from 'react'
 import './App.css'
 
-type ProgressRef = MutableRefObject<number>
-
-function seededValue(index: number) {
-  const value = Math.sin(index * 127.1 + 311.7) * 43758.5453
-  return value - Math.floor(value)
-}
-
-const portalVertexShader = `
-  varying vec2 vUv;
-
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`
-
-const portalFragmentShader = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform float uTime;
-  uniform float uPass;
-
-  void main() {
-    vec2 point = (vUv - 0.5) * 2.0;
-    float radius = length(point);
-    float angle = atan(point.y, point.x);
-    float currentAngle = angle + radius * 6.5 - uTime * 0.18;
-    float folds = sin(currentAngle * 5.0 + sin(angle * 3.0 + uTime * 0.12) * 1.25);
-    float veil = smoothstep(-0.8, 0.75, folds) * (1.0 - smoothstep(0.24, 1.0, radius));
-    float strands = 0.5 + 0.5 * sin(angle * 7.0 + radius * 23.0 - uTime * 0.24 + sin(angle * 3.0) * 1.4);
-    float halo = exp(-radius * 2.75);
-    float glint = pow(max(0.0, sin(currentAngle * 2.0 - uTime * 0.08)), 12.0);
-
-    vec3 deep = vec3(0.025, 0.05, 0.055);
-    vec3 blue = vec3(0.09, 0.34, 0.32);
-    vec3 pale = vec3(0.67, 0.82, 0.68);
-    vec3 ember = vec3(0.54, 0.28, 0.13);
-    float aperture = exp(-abs(point.x + sin(point.y * 3.0 + uTime * 0.12) * 0.035) * 17.0);
-    vec3 color = deep + blue * (0.28 + veil * 1.1);
-    color += blue * pow(strands, 7.0) * 0.74;
-    color += mix(ember, pale, smoothstep(-0.3, 0.8, point.y)) * halo * 0.86;
-    color += vec3(0.62, 0.86, 0.72) * aperture * (1.0 - smoothstep(0.2, 1.0, radius)) * 0.32;
-    color += vec3(0.72, 0.88, 0.74) * glint * 0.4;
-
-    float membrane = 0.34 + veil * 0.2 + halo * 0.1;
-    float passing = 1.0 - smoothstep(0.34, 0.48, uPass);
-    gl_FragColor = vec4(color, membrane * passing);
-  }
-`
-
-function makePortalShape(width: number, bottom: number, shoulder: number, peak: number) {
-  const shape = new Shape()
-  shape.moveTo(-width, bottom)
-  shape.lineTo(-width, shoulder)
-  shape.bezierCurveTo(-width, shoulder + 1.2, -width * 0.78, peak - 0.98, 0, peak)
-  shape.bezierCurveTo(width * 0.78, peak - 0.98, width, shoulder + 1.2, width, shoulder)
-  shape.lineTo(width, bottom)
-  shape.closePath()
-  return shape
-}
-
-function makeFrameShape() {
-  const frame = makePortalShape(2.55, -3.3, 0.35, 4.75)
-  const opening = new Path()
-  opening.moveTo(-1.91, -3.12)
-  opening.lineTo(-1.91, 0.28)
-  opening.bezierCurveTo(-1.91, 1.48, -1.49, 2.93, 0, 3.91)
-  opening.bezierCurveTo(1.49, 2.93, 1.91, 1.48, 1.91, 0.28)
-  opening.lineTo(1.91, -3.12)
-  opening.closePath()
-  frame.holes.push(opening)
-  return frame
-}
-
-function makeArchCurve() {
-  return new CatmullRomCurve3([
-    new Vector3(-2.42, -3.18, 0),
-    new Vector3(-2.42, 0.3, 0),
-    new Vector3(-2.2, 1.75, 0),
-    new Vector3(-1.54, 3.24, 0),
-    new Vector3(0, 4.55, 0),
-    new Vector3(1.54, 3.24, 0),
-    new Vector3(2.2, 1.75, 0),
-    new Vector3(2.42, 0.3, 0),
-    new Vector3(2.42, -3.18, 0),
-  ])
-}
-
-function Portal({ progressRef }: { progressRef: ProgressRef }) {
-  const glowMaterial = useRef<ShaderMaterial>(null)
-  const frameShape = useMemo(() => makeFrameShape(), [])
-  const innerShape = useMemo(() => makePortalShape(1.91, -3.1, 0.28, 3.91), [])
-  const innerGeometry = useMemo(() => new ShapeGeometry(innerShape, 36), [innerShape])
-  const outerTrace = useMemo(() => new TubeGeometry(makeArchCurve(), 120, 0.052, 8, false), [])
-  const innerTrace = useMemo(() => new TubeGeometry(makeArchCurve(), 120, 0.018, 6, false), [])
-
-  useFrame(({ clock }) => {
-    if (glowMaterial.current) {
-      glowMaterial.current.uniforms.uTime.value = clock.elapsedTime
-      glowMaterial.current.uniforms.uPass.value = progressRef.current
-    }
-  })
-
+function ThresholdArtwork() {
   return (
-    <group position={[0, 0.05, 0]}>
-      <mesh position={[0, 0, -0.29]}>
-        <extrudeGeometry args={[frameShape, { depth: 0.58, bevelEnabled: true, bevelSegments: 4, steps: 1, bevelSize: 0.075, bevelThickness: 0.09, curveSegments: 28 }]} />
-        <meshStandardMaterial color="#282b2a" metalness={0.72} roughness={0.37} />
-      </mesh>
-
-      <mesh geometry={outerTrace} position={[0, 0, 0.34]}>
-        <meshStandardMaterial color="#8d8064" metalness={0.88} roughness={0.28} emissive="#312a1b" emissiveIntensity={0.65} />
-      </mesh>
-      <mesh geometry={innerTrace} position={[0, 0, 0.355]}>
-        <meshStandardMaterial color="#7eb1a6" metalness={0.8} roughness={0.2} emissive="#2b817b" emissiveIntensity={1.4} />
-      </mesh>
-
-      <mesh geometry={innerGeometry} position={[0, 0, -0.16]}>
-        <shaderMaterial
-          ref={glowMaterial}
-          vertexShader={portalVertexShader}
-          fragmentShader={portalFragmentShader}
-          uniforms={{ uTime: { value: 0 }, uPass: { value: 0 } }}
-          side={DoubleSide}
-          transparent
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </mesh>
-
-      <mesh position={[0, -3.18, 0.16]}>
-        <boxGeometry args={[5.55, 0.34, 1.2]} />
-        <meshStandardMaterial color="#292826" metalness={0.62} roughness={0.42} />
-      </mesh>
-      <mesh position={[0, -3.38, 0.2]}>
-        <boxGeometry args={[6.7, 0.16, 1.55]} />
-        <meshStandardMaterial color="#171b1d" metalness={0.46} roughness={0.5} />
-      </mesh>
-    </group>
+    <svg className="scene-illustration scene-illustration--threshold" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="threshold-stone" x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#3d4540" />
+          <stop offset="0.46" stopColor="#171e1d" />
+          <stop offset="1" stopColor="#080b0c" />
+        </linearGradient>
+        <linearGradient id="threshold-edge" x1="0" y1="0" x2="1" y2="0">
+          <stop stopColor="#b99e70" stopOpacity="0" />
+          <stop offset="0.52" stopColor="#d5bd8d" stopOpacity="0.78" />
+          <stop offset="1" stopColor="#8e8062" stopOpacity="0.08" />
+        </linearGradient>
+        <radialGradient id="threshold-depth" cx="50%" cy="42%" r="62%">
+          <stop stopColor="#151b1b" />
+          <stop offset="0.65" stopColor="#080b0c" />
+          <stop offset="1" stopColor="#030506" />
+        </radialGradient>
+      </defs>
+      <path d="M0 900V145L156 74 244 172 296 900Z" fill="url(#threshold-stone)" />
+      <path d="M1200 900V94L1090 151 1027 99 943 193 901 900Z" fill="url(#threshold-stone)" />
+      <path d="M170 900V354C170 132 331 29 493 29S816 132 816 354V900H731V363C731 205 629 124 493 124S255 205 255 363V900Z" fill="url(#threshold-stone)" fillRule="evenodd" />
+      <path d="M255 900V363C255 205 357 124 493 124S731 205 731 363V900Z" fill="url(#threshold-depth)" />
+      <path d="M170 900V354C170 132 331 29 493 29S816 132 816 354V900" fill="none" stroke="url(#threshold-edge)" strokeWidth="2" />
+      <path d="M255 900V363C255 205 357 124 493 124S731 205 731 363V900" fill="none" stroke="#aaa082" strokeOpacity="0.22" strokeWidth="1" />
+      <path d="M0 816 222 777 326 824 433 789 590 839 785 797 940 845 1200 788V900H0Z" fill="#111616" />
+      <path d="M0 858 272 828 478 863 741 824 1008 867 1200 838" fill="none" stroke="#677169" strokeOpacity="0.18" strokeWidth="2" />
+    </svg>
   )
 }
 
-function Pillar({ x, z, height, lean = 0 }: { x: number; z: number; height: number; lean?: number }) {
-  const y = -3.22 + height / 2
+function CrossingArtwork() {
   return (
-    <group position={[x, y, z]} rotation={[0, 0, lean]}>
-      <mesh castShadow position={[0, 0, 0]}>
-        <cylinderGeometry args={[0.75, 0.94, height, 7, 1]} />
-        <meshStandardMaterial color="#1d2426" metalness={0.48} roughness={0.58} />
-      </mesh>
-      <mesh position={[0, height / 2 + 0.22, 0]}>
-        <boxGeometry args={[2.35, 0.44, 2.1]} />
-        <meshStandardMaterial color="#292b29" metalness={0.56} roughness={0.4} />
-      </mesh>
-      <mesh position={[0, -height / 2 + 0.2, 0]}>
-        <boxGeometry args={[2.15, 0.42, 1.95]} />
-        <meshStandardMaterial color="#242727" metalness={0.52} roughness={0.48} />
-      </mesh>
-      {[-0.52, 0.52].map((offset) => (
-        <mesh key={offset} position={[offset, 0, 0.66]}>
-          <boxGeometry args={[0.035, height * 0.82, 0.025]} />
-          <meshStandardMaterial color="#647168" metalness={0.65} roughness={0.34} emissive="#172621" emissiveIntensity={0.5} />
-        </mesh>
-      ))}
-    </group>
+    <svg className="scene-illustration scene-illustration--crossing" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="crossing-stone" x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#3c4440" />
+          <stop offset="0.5" stopColor="#151c1c" />
+          <stop offset="1" stopColor="#080b0c" />
+        </linearGradient>
+        <radialGradient id="crossing-veil" cx="54%" cy="46%" r="57%">
+          <stop stopColor="#829283" stopOpacity="0.2" />
+          <stop offset="0.46" stopColor="#53645d" stopOpacity="0.1" />
+          <stop offset="1" stopColor="#090d0d" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="crossing-rim" x1="0" y1="0" x2="1" y2="0">
+          <stop stopColor="#6e786e" stopOpacity="0.15" />
+          <stop offset="0.5" stopColor="#c4ad7d" stopOpacity="0.7" />
+          <stop offset="1" stopColor="#6e786e" stopOpacity="0.1" />
+        </linearGradient>
+      </defs>
+      <path d="M0 900V152L138 97 240 170 321 82 414 900Z" fill="url(#crossing-stone)" />
+      <path d="M1200 900V87L1080 130 986 76 901 174 826 900Z" fill="url(#crossing-stone)" />
+      <path d="M359 900V395C359 195 473 95 603 95S847 195 847 395V900" fill="none" stroke="#53605a" strokeOpacity="0.34" strokeWidth="80" />
+      <path d="M359 900V395C359 195 473 95 603 95S847 195 847 395V900" fill="none" stroke="url(#crossing-rim)" strokeWidth="2" />
+      <path d="M400 900V405C400 232 489 147 603 147S806 232 806 405V900Z" fill="#080b0c" />
+      <path d="M400 900V405C400 232 489 147 603 147S806 232 806 405V900Z" fill="url(#crossing-veil)" />
+      <path d="M434 900 485 520 564 344 604 278 644 351 721 527 777 900Z" fill="#0d1212" fillOpacity="0.78" />
+      <path d="M0 814 228 792 369 837 505 810 705 846 908 805 1200 837V900H0Z" fill="#111616" />
+      <path d="M427 900 504 852 600 883 691 846 781 900" fill="none" stroke="#a18e69" strokeOpacity="0.32" strokeWidth="2" />
+    </svg>
   )
 }
 
-function FloatingFragments() {
-  const fragments = useRef<Array<Mesh | null>>([])
-  const items = useMemo(() => {
-    return Array.from({ length: 22 }, (_, index) => {
-      const random = (offset: number) => seededValue(index * 7 + offset + 19)
-      return {
-        position: [(index % 2 === 0 ? -1 : 1) * (15 + random(0) * 18), 2 + random(1) * 11, -38 - random(2) * 45] as [number, number, number],
-        scale: [0.05 + random(3) * 0.16, 0.12 + random(4) * 0.36, 0.04 + random(5) * 0.08] as [number, number, number],
-        rotation: random(6) * Math.PI,
-        speed: 0.025 + random(7) * 0.09,
-        index,
-      }
-    })
-  }, [])
-
-  useFrame((_, delta) => {
-    items.forEach((item, index) => {
-      const mesh = fragments.current[index]
-      if (mesh) mesh.rotation.y += delta * item.speed
-    })
-  })
-
+function UnknownArtwork() {
   return (
-    <group>
-      {items.map((item, index) => (
-        <mesh
-          key={item.index}
-          ref={(mesh) => {
-            if (mesh) fragments.current[index] = mesh
-          }}
-          position={item.position}
-          scale={item.scale}
-          rotation={[item.rotation, item.rotation * 0.6, item.rotation * 0.4]}
-        >
-          <octahedronGeometry args={[1, 0]} />
-          <meshStandardMaterial color="#586560" metalness={0.64} roughness={0.33} emissive="#182824" emissiveIntensity={0.55} />
-        </mesh>
-      ))}
-    </group>
+    <svg className="scene-illustration scene-illustration--unknown" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="unknown-mineral" x1="0" y1="0" x2="0.9" y2="1">
+          <stop stopColor="#414943" />
+          <stop offset="0.36" stopColor="#242c29" />
+          <stop offset="1" stopColor="#0b1010" />
+        </linearGradient>
+        <linearGradient id="unknown-cut" x1="0" y1="0" x2="0.8" y2="1">
+          <stop stopColor="#fff8df" />
+          <stop offset="0.22" stopColor="#ead39e" />
+          <stop offset="0.52" stopColor="#fff5dc" />
+          <stop offset="0.78" stopColor="#c7a66d" />
+          <stop offset="1" stopColor="#f8e8bd" />
+        </linearGradient>
+        <radialGradient id="unknown-radiance" cx="63%" cy="48%" r="49%">
+          <stop stopColor="#e8c98e" stopOpacity="0.2" />
+          <stop offset="0.4" stopColor="#b89a69" stopOpacity="0.09" />
+          <stop offset="1" stopColor="#a88a5b" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <ellipse cx="785" cy="423" rx="345" ry="394" fill="url(#unknown-radiance)" />
+      <path d="M0 0H452L482 128 445 249 474 364 430 493 463 603 420 900H0Z" fill="url(#unknown-mineral)" />
+      <path d="M0 0H452L482 128 445 249 474 364 430 493 463 603 420 900H0Z" fill="none" stroke="#9da394" strokeOpacity="0.11" strokeWidth="2" />
+      <path d="M822 0H1200V900H759L789 748 754 632 798 506 766 374 809 241 779 120Z" fill="url(#unknown-mineral)" />
+      <path d="M822 0H1200V900H759L789 748 754 632 798 506 766 374 809 241 779 120Z" fill="none" stroke="#adb09d" strokeOpacity="0.12" strokeWidth="2" />
+      <path d="M258 0 365 92 404 229 368 336 434 450 391 573 451 702 419 900H217L252 743 214 612 256 487 218 355 260 224 224 99Z" fill="#151d1b" fillOpacity="0.72" />
+      <path d="M699 0 787 102 756 231 798 358 761 491 811 617 775 743 819 900H612L648 757 615 626 655 498 618 368 653 235 624 106Z" fill="#17201d" fillOpacity="0.86" />
+      <path d="M621 92 653 180 631 246 666 316 640 390 674 456 647 523 677 589 651 664 680 734 656 810 671 900 703 900 687 809 710 735 682 664 707 590 678 523 704 456 674 390 701 316 671 246 695 179 668 92Z" fill="#151a17" />
+      <path d="M655 56 674 150 660 219 680 285 665 356 687 426 671 500 695 566 677 641 699 712 686 786 704 856" fill="none" stroke="#d8c18e" strokeOpacity="0.42" strokeWidth="3" />
+      <path d="M662 78 675 153 663 224 678 290 665 360 681 427 670 500 688 567 675 641 692 712 683 785 695 856 701 900 707 900 702 854 691 784 704 713 688 640 700 567 683 499 694 427 674 359 687 290 669 224 681 153 668 78Z" fill="url(#unknown-cut)" />
+      <path d="M0 781 168 752 302 790 431 762 548 809 679 781 799 816 947 767 1084 800 1200 774V900H0Z" fill="#111716" />
+      <path d="M0 835 178 813 339 850 510 820 689 854 850 816 1038 853 1200 826" fill="none" stroke="#8d9588" strokeOpacity="0.18" strokeWidth="2" />
+    </svg>
   )
 }
 
-function Dust() {
-  const points = useRef<import('three').Points>(null)
-  const dustGeometry = useMemo(() => {
-    const positions = new Float32Array(950 * 3)
-    for (let i = 0; i < 950; i += 1) {
-      positions[i * 3] = (seededValue(i * 3 + 125) - 0.5) * 24
-      positions[i * 3 + 1] = (seededValue(i * 3 + 126) - 0.5) * 14
-      positions[i * 3 + 2] = -34 + seededValue(i * 3 + 127) * 51
-    }
-    const geometry = new BufferGeometry()
-    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-    return geometry
-  }, [])
-
-  useFrame((_, delta) => {
-    if (points.current) points.current.rotation.y += delta * 0.003
-  })
-
+function RevelationArtwork() {
   return (
-    <points ref={points} geometry={dustGeometry}>
-      <pointsMaterial color="#a6b9aa" size={0.035} sizeAttenuation transparent opacity={0.52} depthWrite={false} />
-    </points>
-  )
-}
-
-function Floor() {
-  const floorMaterial = useMemo(() => new ShaderMaterial({
-    uniforms: {},
-    vertexShader: `
-      varying vec3 vWorldPosition;
-      void main() {
-        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
-        gl_Position = projectionMatrix * viewMatrix * worldPosition;
-      }
-    `,
-    fragmentShader: `
-      precision highp float;
-      varying vec3 vWorldPosition;
-      void main() {
-        vec2 gridPoint = vWorldPosition.xz * 0.5;
-        vec2 cell = abs(fract(gridPoint - 0.5) - 0.5) / fwidth(gridPoint);
-        float grid = 1.0 - min(min(cell.x, cell.y), 1.0);
-        float fineGrid = smoothstep(0.42, 0.02, min(cell.x, cell.y));
-        float glow = exp(-abs(vWorldPosition.x) * 0.24) * exp(-abs(vWorldPosition.z) * 0.055);
-        float edgeFade = 1.0 - smoothstep(42.0, 112.0, length(vWorldPosition.xz));
-        float beyond = smoothstep(-8.0, -28.0, vWorldPosition.z);
-        float waterline = sin(vWorldPosition.x * 0.56 + sin(vWorldPosition.z * 0.13) * 2.0)
-          * sin(vWorldPosition.z * 0.38 + vWorldPosition.x * 0.12);
-        float water = pow(max(0.0, 1.0 - abs(waterline)), 18.0) * beyond;
-        vec3 base = vec3(0.008, 0.012, 0.015);
-        vec3 reflected = vec3(0.055, 0.12, 0.105) * glow * 0.48;
-        float line = max(grid * 0.16, fineGrid * 0.045) * edgeFade * (1.0 - beyond * 0.9);
-        vec3 sea = vec3(0.12, 0.2, 0.19) * water * edgeFade * 0.65;
-        gl_FragColor = vec4(base + reflected + vec3(0.19, 0.31, 0.25) * line + sea, 1.0);
-      }
-    `,
-    side: DoubleSide,
-    toneMapped: false,
-  }), [])
-
-  return (
-    <mesh position={[0, -3.42, -55]} rotation={[-Math.PI / 2, 0, 0]} material={floorMaterial}>
-      <planeGeometry args={[180, 180, 1, 1]} />
-    </mesh>
-  )
-}
-
-function World({ progressRef }: { progressRef: ProgressRef }) {
-  const cameraTarget = useMemo(() => new Vector3(), [])
-  const cameraPosition = useMemo(() => new Vector3(), [])
-  const flightPath = useMemo(() => new CatmullRomCurve3([
-    new Vector3(0, 1.02, 14.5),
-    new Vector3(-0.12, 0.96, 8),
-    new Vector3(-0.2, 0.88, 3.2),
-    new Vector3(-0.12, 0.76, -4),
-    new Vector3(0.22, 0.86, -14),
-    new Vector3(0.42, 1.25, -30),
-    new Vector3(0.2, 2.1, -50),
-    new Vector3(0, 3.2, -72),
-  ]), [])
-
-  useFrame(({ camera }, delta) => {
-    const progress = progressRef.current
-    flightPath.getPoint(progress, cameraPosition)
-    const ease = 1 - Math.exp(-3.2 * delta)
-
-    camera.position.lerp(cameraPosition, ease)
-    const direction = flightPath.getTangent(progress)
-    cameraTarget.set(
-      camera.position.x + direction.x * 12,
-      camera.position.y + direction.y * 12 + Math.sin(progress * Math.PI) * 0.28,
-      camera.position.z + direction.z * 12,
-    )
-    camera.lookAt(cameraTarget)
-  })
-
-  return (
-    <>
-      <color attach="background" args={['#05080a']} />
-      <fog attach="fog" args={['#0a1114', 32, 132]} />
-      <ambientLight intensity={0.32} color="#9baea3" />
-      <hemisphereLight args={['#8da79e', '#090b0c', 0.55]} />
-      <spotLight position={[0, 10, 3]} angle={0.31} penumbra={0.9} intensity={95} color="#a5b7a3" distance={30} />
-      <pointLight position={[0, 0.6, 1.3]} intensity={11} color="#56a69a" distance={12} />
-      <pointLight position={[0, 0.2, -0.7]} intensity={13} color="#c27c46" distance={8} />
-      <pointLight position={[-7, 3, -9]} intensity={8} color="#597f84" distance={15} />
-      <Portal progressRef={progressRef} />
-
-      {[-1, 1].flatMap((side) => [
-        <Pillar key={`${side}-near`} x={side * 5.2} z={-1.8} height={13.5} lean={side * -0.018} />,
-        <Pillar key={`${side}-middle`} x={side * 6.3} z={-12.5} height={15.8} lean={side * 0.026} />,
-        <Pillar key={`${side}-far`} x={side * 5.7} z={-25.5} height={12.8} lean={side * -0.035} />,
-      ])}
-
-      <mesh position={[0, 4.15, -5.6]} rotation={[0.48, 0, 0.1]}>
-        <torusGeometry args={[5.55, 0.055, 8, 120]} />
-        <meshStandardMaterial color="#343831" metalness={0.78} roughness={0.31} emissive="#22251c" emissiveIntensity={0.38} />
-      </mesh>
-      <mesh position={[0, 1.9, -2.5]} rotation={[0, 0, Math.PI]}>
-        <cylinderGeometry args={[0.12, 2.8, 10, 48, 1, true]} />
-        <meshBasicMaterial color="#4c7770" transparent opacity={0.045} side={DoubleSide} depthWrite={false} />
-      </mesh>
-
-      <DreamWorld />
-
-      <Floor />
-      <FloatingFragments />
-      <Dust />
-    </>
-  )
-}
-
-function DreamWorld() {
-  const steps = useMemo(() => Array.from({ length: 22 }, (_, index) => {
-    const depth = index / 21
-    return {
-      position: [Math.sin(depth * Math.PI) * 0.6, -3.08 + depth * 3.0, -8 - index * 1.75] as [number, number, number],
-      width: 3.4 + Math.sin(depth * Math.PI) * 1.4,
-      length: 1.9 + depth * 0.3,
-      index,
-    }
-  }), [])
-
-  return (
-    <group>
-      {steps.map((step) => (
-        <mesh key={step.index} position={step.position} castShadow receiveShadow>
-          <boxGeometry args={[step.width, 0.22, step.length]} />
-          <meshStandardMaterial color={step.index % 3 === 0 ? '#4b514b' : '#242d2e'} metalness={0.56} roughness={0.38} emissive="#293e3a" emissiveIntensity={0.22} />
-        </mesh>
-      ))}
-
-      <mesh position={[0, 0.05, -48]} rotation={[0, 0, 0.08]}>
-        <cylinderGeometry args={[4.8, 6.3, 1.1, 9, 1]} />
-        <meshStandardMaterial color="#343b39" metalness={0.72} roughness={0.3} emissive="#283d39" emissiveIntensity={0.28} />
-      </mesh>
-      <mesh position={[0, 8.5, -51]} rotation={[0, 0, 0.08]} castShadow>
-        <cylinderGeometry args={[0.18, 1.55, 16, 7, 1]} />
-        <meshStandardMaterial color="#69716a" metalness={0.7} roughness={0.25} emissive="#354b45" emissiveIntensity={0.34} />
-      </mesh>
-      <mesh position={[0, 5.1, -50.6]} rotation={[0.12, 0, 0.08]}>
-        <torusGeometry args={[3.15, 0.045, 8, 96]} />
-        <meshStandardMaterial color="#9a906c" metalness={0.83} roughness={0.22} emissive="#746344" emissiveIntensity={0.8} />
-      </mesh>
-
-      {[-1, 1].map((side) => (
-        <group key={side} position={[side * 10, -0.2, -37]} rotation={[0, 0, side * -0.025]}>
-          <mesh castShadow>
-            <cylinderGeometry args={[0.6, 1.3, 17, 5, 1]} />
-            <meshStandardMaterial color="#222b2d" metalness={0.62} roughness={0.4} />
-          </mesh>
-          <mesh position={[0, 8.6, 0]}>
-            <torusGeometry args={[1.3, 0.035, 6, 48]} />
-            <meshStandardMaterial color="#66786f" emissive="#3d6558" emissiveIntensity={0.9} />
-          </mesh>
-        </group>
-      ))}
-
-      <mesh position={[0, 11, -98]}>
-        <sphereGeometry args={[9, 48, 32]} />
-        <meshStandardMaterial color="#b9b5a1" emissive="#827d67" emissiveIntensity={0.42} roughness={0.95} />
-      </mesh>
-      <mesh position={[0, 11, -98]} rotation={[0.16, 0, -0.08]}>
-        <torusGeometry args={[12.4, 0.075, 8, 128]} />
-        <meshStandardMaterial color="#817d6b" metalness={0.8} roughness={0.28} emissive="#625a43" emissiveIntensity={0.75} />
-      </mesh>
-      <pointLight position={[0, 9, -50]} intensity={26} color="#91b2a4" distance={42} />
-      <pointLight position={[0, 12, -90]} intensity={38} color="#b6aa82" distance={68} />
-    </group>
+    <svg className="scene-illustration scene-illustration--revelation" viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="revelation-stone" x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#42443d" />
+          <stop offset="0.5" stopColor="#1c2220" />
+          <stop offset="1" stopColor="#090c0d" />
+        </linearGradient>
+        <linearGradient id="revelation-rim" x1="0" y1="0" x2="1" y2="1">
+          <stop stopColor="#8e8064" stopOpacity="0.18" />
+          <stop offset="0.48" stopColor="#d2ba89" stopOpacity="0.72" />
+          <stop offset="1" stopColor="#85775c" stopOpacity="0.24" />
+        </linearGradient>
+        <radialGradient id="revelation-void" cx="46%" cy="43%" r="58%">
+          <stop stopColor="#020405" />
+          <stop offset="0.75" stopColor="#080b0b" />
+          <stop offset="1" stopColor="#252a26" />
+        </radialGradient>
+      </defs>
+      <path d="M0 900V134L129 79 236 150 317 63 383 900Z" fill="url(#revelation-stone)" />
+      <path d="M1200 900V78L1098 117 1016 66 931 147 835 900Z" fill="url(#revelation-stone)" />
+      <ellipse cx="756" cy="421" rx="307" ry="329" fill="none" stroke="#343b36" strokeWidth="58" />
+      <ellipse cx="756" cy="421" rx="307" ry="329" fill="none" stroke="url(#revelation-rim)" strokeWidth="2" />
+      <ellipse cx="756" cy="421" rx="212" ry="235" fill="url(#revelation-void)" />
+      <path d="M619 369C681 312 787 290 878 338" fill="none" stroke="#c6ad7b" strokeOpacity="0.48" strokeWidth="2" />
+      <path d="M0 786 180 756 347 802 495 770 638 818 803 779 951 819 1086 770 1200 799V900H0Z" fill="#111615" />
+      <path d="M279 900 438 842 579 874 744 840 896 882 1051 843" fill="none" stroke="#9a8969" strokeOpacity="0.28" strokeWidth="2" />
+    </svg>
   )
 }
 
 function App() {
-  const scrollProgress = useRef(0)
-
-  useEffect(() => {
-    const updateProgress = () => {
-      const distance = document.documentElement.scrollHeight - window.innerHeight
-      const progress = distance > 0 ? window.scrollY / distance : 0
-      scrollProgress.current = Math.min(1, Math.max(0, progress))
-      document.documentElement.style.setProperty('--scroll-progress', `${scrollProgress.current}`)
-    }
-
-    updateProgress()
-    window.addEventListener('scroll', updateProgress, { passive: true })
-    window.addEventListener('resize', updateProgress)
-    return () => {
-      window.removeEventListener('scroll', updateProgress)
-      window.removeEventListener('resize', updateProgress)
-    }
-  }, [])
-
   return (
     <div className="experience">
-      <Canvas
-        className="world-canvas"
-        dpr={[1, 1.5]}
-        camera={{ fov: 39, near: 0.1, far: 100, position: [0, 1.02, 14.5] }}
-        gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
-        fallback={<div className="webgl-fallback">This experience needs a browser with WebGL support.</div>}
-        aria-hidden="true"
-      >
-        <World progressRef={scrollProgress} />
-      </Canvas>
-
       <header className="masthead">
         <a className="wordmark" href="#threshold" aria-label="The Veil — beginning">
           <span className="wordmark-symbol" aria-hidden="true"><i /><i /><i /></span>
@@ -461,11 +147,12 @@ function App() {
       </header>
 
       <div className="chapter-index" aria-hidden="true">
-        <span>01</span><span className="index-rule" /><span>03</span>
+        <span>01</span><span className="index-rule" /><span>04</span>
       </div>
 
       <main className="story">
         <section id="threshold" className="chapter chapter--threshold" aria-labelledby="chapter-one-title">
+          <div className="scene-art" aria-hidden="true"><ThresholdArtwork /></div>
           <div className="chapter-copy">
             <p className="eyebrow"><span>01</span><span className="eyebrow-line" /> THE THRESHOLD</p>
             <h1 id="chapter-one-title">The world<br />forgets its shape.</h1>
@@ -478,18 +165,29 @@ function App() {
         </section>
 
         <section id="descent" className="chapter chapter--descent" aria-labelledby="chapter-two-title">
+          <div className="scene-art" aria-hidden="true"><CrossingArtwork /></div>
           <div className="chapter-copy chapter-copy--right">
-            <p className="eyebrow"><span>02</span><span className="eyebrow-line" /> THE DESCENT</p>
-            <h2 id="chapter-two-title">A silence<br />with a pulse.</h2>
-            <p className="chapter-note">The architecture is older than memory.<br />It knows the way through.</p>
+            <p className="eyebrow"><span>02</span><span className="eyebrow-line" /> THE CROSSING</p>
+            <h2 id="chapter-two-title">The dark<br />opens inward.</h2>
+            <p className="chapter-note">The threshold falls away behind you.<br />Another horizon gathers ahead.</p>
           </div>
         </section>
 
         <section id="beyond" className="chapter chapter--beyond" aria-labelledby="chapter-three-title">
+          <div className="scene-art" aria-hidden="true"><UnknownArtwork /></div>
           <div className="chapter-copy">
-            <p className="eyebrow"><span>03</span><span className="eyebrow-line" /> WHAT LIES BEYOND</p>
-            <h2 id="chapter-three-title">You were<br />expected.</h2>
-            <p className="chapter-note">The veil closes softly behind you.<br />The dream is only beginning.</p>
+            <p className="eyebrow"><span>03</span><span className="eyebrow-line" /> THE UNKNOWN</p>
+            <h2 id="chapter-three-title">A country<br />without a horizon.</h2>
+            <p className="chapter-note">The drowned observatory keeps its vigil.<br />The water remembers another sky.</p>
+          </div>
+        </section>
+
+        <section id="revelation" className="chapter chapter--revelation" aria-labelledby="chapter-four-title">
+          <div className="scene-art" aria-hidden="true"><RevelationArtwork /></div>
+          <div className="chapter-copy">
+            <p className="eyebrow"><span>04</span><span className="eyebrow-line" /> THE REVELATION</p>
+            <h2 id="chapter-four-title">The dark<br />has an interior.</h2>
+            <p className="chapter-note">Beyond the eclipsed sun, a chamber<br />holds its breath for you.</p>
           </div>
           <a className="return-link" href="#threshold">RETURN TO THE THRESHOLD <span aria-hidden="true">↗</span></a>
         </section>
@@ -499,7 +197,7 @@ function App() {
         <span>AN EXPLORATION OF THE UNSEEN</span>
         <span className="footer-coordinate">54°21′ N&nbsp;&nbsp; 18°39′ E</span>
       </footer>
-      <div className="progress-line" aria-hidden="true"><span /></div>
+      <div className="progress-line" aria-hidden="true" />
     </div>
   )
 }

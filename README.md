@@ -9,4 +9,4 @@ npm install
 npm run dev
 ```
 
-Scroll to move through the first procedural 3D scene.
+Scroll through four illustrated chapters: The Threshold, The Crossing, The Unknown, and The Revelation.
